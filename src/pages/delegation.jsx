@@ -81,7 +81,7 @@ function DelegationDataPage() {
   const [delegationData, setDelegationData] = useState([])
 
   const [statusCounts, setStatusCounts] = useState({
-    "Verified": 0,
+    "Done": 0,
     "Pending": 0,
     "Planned": 0,
     "Verify Pending": 0
@@ -96,6 +96,11 @@ function DelegationDataPage() {
     const year = date.getFullYear()
     return `${day}/${month}/${year}`
   }, [])
+
+
+  const isTaskDisabled = useCallback((status) => {
+    return status === "Done";
+  }, []);
 
   // NEW: Function to create a proper date object for Google Sheets
   const createGoogleSheetsDate = useCallback((date) => {
@@ -156,14 +161,20 @@ function DelegationDataPage() {
   useEffect(() => {
     if (accountData.length > 0) {
       const counts = {
-        "Verified": 0,
+        "Done": 0,
         "Pending": 0,
         "Planned": 0,
         "Verify Pending": 0
       };
 
-      accountData.forEach(item => {
-        // Only count tasks assigned to the logged-in user
+      // First filter by name if a name filter is applied
+      let filteredData = accountData;
+      if (nameFilter) {
+        filteredData = accountData.filter(item => item["col4"] === nameFilter);
+      }
+
+      filteredData.forEach(item => {
+        // Only count tasks assigned to the logged-in user if not admin
         if (userRole !== "admin" && item["col4"] !== username) return;
 
         const status = item["col20"];
@@ -174,8 +185,7 @@ function DelegationDataPage() {
 
       setStatusCounts(counts);
     }
-  }, [accountData, userRole, username]);
-
+  }, [accountData, userRole, username, nameFilter]); // Added nameFilter dependency
 
 
   useEffect(() => {
@@ -344,7 +354,7 @@ function DelegationDataPage() {
 
     return filtered
       .filter((account) => {
-        // Name filter
+        // Name filter - apply if a name is selected
         if (nameFilter && account["col4"] !== nameFilter) return false;
 
         // Date range filter
@@ -365,7 +375,7 @@ function DelegationDataPage() {
           }
         }
 
-        // Status filter
+        // Status filter - apply if a status is selected (and it's not "All Status")
         if (statusFilter && statusFilter !== "All Status" && account["col20"] !== statusFilter) {
           return false;
         }
@@ -374,7 +384,6 @@ function DelegationDataPage() {
       })
       .sort(sortDateWise);
   }, [accountData, debouncedSearchTerm, nameFilter, dateRange, statusFilter, formatDateForDisplay, parseDateFromDDMMYYYY, sortDateWise]);
-
 
   const uniqueNames = useMemo(() => {
     const names = new Set()
@@ -716,7 +725,7 @@ function DelegationDataPage() {
         return "bg-blue-100 text-blue-800";
       case "Planned":
         return "bg-yellow-100 text-yellow-800";
-      case "Verified":
+      case "Done":
         return "bg-green-100 text-green-800";
       default:
         return "bg-gray-100 text-gray-800";
@@ -1113,11 +1122,11 @@ function DelegationDataPage() {
               onChange={(e) => setStatusFilter(e.target.value)}
               className="border border-purple-300 rounded-lg px-3 py-2 text-sm min-w-[160px] max-w-[200px] focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-sm"
             >
-              <option value="">All Status ({accountData.length})</option>
-              <option value="Verified">✅ Verified  ({statusCounts.Verified})</option>
-              <option value="Pending">🕒 Pending  ({statusCounts.Pending})</option>
-              <option value="Verify Pending">🔍 Verify Pending  ({statusCounts["Verify Pending"]})</option>
-              <option value="Planned">📜 Planned  ({statusCounts.Planned})</option>
+              <option value="">All Status ({filteredAccountData.length})</option>
+              <option value="Done">✅ Done ({statusCounts.Done})</option>
+              <option value="Pending">🕒 Pending ({statusCounts.Pending})</option>
+              <option value="Verify Pending">🔍 Verify Pending ({statusCounts["Verify Pending"]})</option>
+              <option value="Planned">📜 Planned ({statusCounts.Planned})</option>
             </select>
           </div>
 
@@ -1534,7 +1543,8 @@ function DelegationDataPage() {
                       return (
                         <tr
                           key={account._id}
-                          className={`${isSelected ? "bg-purple-50" : ""} hover:bg-gray-50 ${rowColorClass}`}
+                          className={`${isSelected ? "bg-purple-50" : ""} hover:bg-gray-50 ${rowColorClass} ${isTaskDisabled(account["col20"]) ? "opacity-50 bg-gray-100 cursor-not-allowed" : ""
+                            }`}
                         >
                           <td className="px-6 py-4 whitespace-nowrap">
                             <input
@@ -1542,6 +1552,7 @@ function DelegationDataPage() {
                               className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
                               checked={isSelected}
                               onChange={(e) => handleCheckboxClick(e, account._id)}
+                              disabled={isTaskDisabled(account["col20"])}
                             />
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
