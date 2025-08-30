@@ -408,7 +408,7 @@ function DelegationDataPage() {
   }, [accountData, formatDateForDisplay, parseDateFromDDMMYYYY])
 
 
-  // Updated history filtering with user filter based on column H
+  // Updated filteredHistoryData useMemo with name filter
   const filteredHistoryData = useMemo(() => {
     return historyData
       .filter((item) => {
@@ -417,6 +417,9 @@ function DelegationDataPage() {
           userRole === "admin" || (item["col7"] && item["col7"].toLowerCase() === username.toLowerCase())
 
         if (!userMatch) return false
+
+        // Name filter - apply if a name is selected (check column H - col7)
+        if (nameFilter && item["col7"] !== nameFilter) return false
 
         const matchesSearch = debouncedSearchTerm
           ? Object.values(item).some(
@@ -453,8 +456,7 @@ function DelegationDataPage() {
         if (!dateB) return -1
         return dateB.getTime() - dateA.getTime()
       })
-  }, [historyData, debouncedSearchTerm, startDate, endDate, parseDateFromDDMMYYYY, userRole, username])
-
+  }, [historyData, debouncedSearchTerm, startDate, endDate, parseDateFromDDMMYYYY, userRole, username, nameFilter]) // Added nameFilter dependency
   // Optimized data fetching with parallel requests
   // Optimized data fetching with parallel requests
   const fetchSheetData = useCallback(async () => {
