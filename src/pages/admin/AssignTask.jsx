@@ -2,6 +2,47 @@ import { useState, useEffect } from "react";
 import { BellRing, FileCheck, Calendar, Clock } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
 
+
+const TaskTypePopup = ({ isOpen, onClose, onSelect }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-96 max-w-md">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold text-purple-700">Select Task Type</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            <X size={20} />
+          </button>
+        </div>
+        <div className="space-y-4">
+          <button
+            onClick={() => onSelect("checklist")}
+            className="w-full p-4 border border-purple-200 rounded-lg text-left hover:bg-purple-50 transition-colors"
+          >
+            <div className="font-medium text-purple-700">Checklist Task</div>
+            <div className="text-sm text-purple-600 mt-1">
+              All frequencies of Daily,Weekly,Monthly,Yearly etc. Tasks will be stored in the Checklist sheet.
+            </div>
+          </button>
+          <button
+            onClick={() => onSelect("delegation")}
+            className="w-full p-4 border border-purple-200 rounded-lg text-left hover:bg-purple-50 transition-colors"
+          >
+            <div className="font-medium text-purple-700">Delegation Task</div>
+            <div className="text-sm text-purple-600 mt-1">
+              Only 'One-Time' frequency. Tasks will be stored in the Delegation sheet.
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Calendar Component (defined outside)
 const CalendarComponent = ({ date, onChange, onClose }) => {
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -144,6 +185,8 @@ const addYears = (date, years) => {
 
 export default function AssignTask() {
 
+  // const [showTaskTypePopup, setShowTaskTypePopup] = useState(true);
+  const [selectedTaskType, setSelectedTaskType] = useState(null);
   const [date, setSelectedDate] = useState(null);
   const [time, setTime] = useState("09:00"); // Default time 9:00 AM
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -156,22 +199,28 @@ export default function AssignTask() {
   const [givenByOptions, setGivenByOptions] = useState([]);
   const [doerOptions, setDoerOptions] = useState([]);
 
-  const frequencies = [
-    { value: "one-time", label: "One Time (No Recurrence)" },
-    { value: "daily", label: "Daily" },
-    { value: "weekly", label: "Weekly" },
-    { value: "fortnightly", label: "Fortnightly" },
-    { value: "monthly", label: "Monthly" },
-    { value: "quarterly", label: "Quarterly" },
-    { value: "yearly", label: "Yearly" },
-    { value: "end-of-1st-week", label: "End of 1st Week" },
-    { value: "end-of-2nd-week", label: "End of 2nd Week" },
-    { value: "end-of-3rd-week", label: "End of 3rd Week" },
-    { value: "end-of-4th-week", label: "End of 4th Week" },
-    { value: "end-of-last-week", label: "End of Last Week" },
-  ];
+  const getFrequencies = () => {
+    if (selectedTaskType === "delegation") {
+      return [{ value: "one-time", label: "One Time (No Recurrence)" }];
+    } else {
+      return [
+        { value: "daily", label: "Daily" },
+        { value: "weekly", label: "Weekly" },
+        { value: "fortnightly", label: "Fortnightly" },
+        { value: "monthly", label: "Monthly" },
+        { value: "quarterly", label: "Quarterly" },
+        { value: "yearly", label: "Yearly" },
+        { value: "end-of-1st-week", label: "End of 1st Week" },
+        { value: "end-of-2nd-week", label: "End of 2nd Week" },
+        { value: "end-of-3rd-week", label: "End of 3rd Week" },
+        { value: "end-of-4th-week", label: "End of 4th Week" },
+        { value: "end-of-last-week", label: "End of Last Week" },
+      ];
+    }
+  };
 
   const [formData, setFormData] = useState({
+    taskType: "", // 'checklist' or 'delegation'
     department: "",
     givenBy: "",
     doer: "",
@@ -181,9 +230,28 @@ export default function AssignTask() {
     requireAttachment: false,
   });
 
+  // Add this function to handle task type selection
+  const handleTaskTypeSelect = (type) => {
+    setSelectedTaskType(type);
+    setFormData(prev => ({
+      ...prev,
+      taskType: type,
+      frequency: type === "delegation" ? "one-time" : "daily"
+    }));
+  };
+
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+
+    if (name === "taskType") {
+      setFormData(prev => ({
+        ...prev,
+        [name]: value,
+        frequency: value === "delegation" ? "one-time" : "daily"
+      }));
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
   };
 
   const handleSwitchChange = (name, e) => {
@@ -883,131 +951,102 @@ export default function AssignTask() {
   };
 
   // UPDATED: handleSubmit function with department-specific sheet logic
- // Add this new function to submit to unique sheet
-const submitToUniqueSheet = async (taskData, taskId) => {
-  try {
-    const uniqueSheetName = "UNIQUE"; // Define your unique sheet name here
-    
-    const formPayload = new FormData();
-    formPayload.append("sheetName", uniqueSheetName);
-    formPayload.append("action", "insert");
-    formPayload.append("batchInsert", "false");
-    formPayload.append("rowData", JSON.stringify([{
-      ...taskData,
-      taskId: taskId.toString()
-    }]));
+  // Add this new function to submit to unique sheet
+  const submitToUniqueSheet = async (taskData, taskId) => {
+    try {
+      const uniqueSheetName = "UNIQUE"; // Define your unique sheet name here
 
-    await fetch(
-      "https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec",
-      {
-        method: "POST",
-        body: formPayload,
-        mode: "no-cors",
+      const formPayload = new FormData();
+      formPayload.append("sheetName", uniqueSheetName);
+      formPayload.append("action", "insert");
+      formPayload.append("batchInsert", "false");
+      formPayload.append("rowData", JSON.stringify([{
+        ...taskData,
+        taskId: taskId.toString()
+      }]));
+
+      await fetch(
+        "https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec",
+        {
+          method: "POST",
+          body: formPayload,
+          mode: "no-cors",
+        }
+      );
+
+      console.log(`First task submitted to ${uniqueSheetName} sheet`);
+    } catch (error) {
+      console.error("Error submitting to unique sheet:", error);
+    }
+  };
+
+  // Replace the existing handleSubmit function with this updated version
+  // Replace the entire handleSubmit function with this:
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      if (generatedTasks.length === 0) {
+        alert("Please generate tasks first by clicking Preview Generated Tasks");
+        setIsSubmitting(false);
+        return;
       }
-    );
 
-    console.log(`First task submitted to ${uniqueSheetName} sheet`);
-  } catch (error) {
-    console.error("Error submitting to unique sheet:", error);
-  }
-};
-
-// Replace the existing handleSubmit function with this updated version
-// Replace the entire handleSubmit function with this:
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  setIsSubmitting(true);
-
-  try {
-    if (generatedTasks.length === 0) {
-      alert("Please generate tasks first by clicking Preview Generated Tasks");
-      setIsSubmitting(false);
-      return;
-    }
-
-    if (!formData.department || formData.department.trim() === "") {
-      alert("Please select a department before submitting tasks");
-      setIsSubmitting(false);
-      return;
-    }
-
-    // Determine the main sheet based on frequency
-    let submitSheetName;
-    if (formData.frequency === "one-time") {
-      submitSheetName = "DELEGATION";
-    } else {
-      submitSheetName = "Checklist";
-    }
-
-    // Check if selected date is today
-    const isToday = () => {
-      if (!date) return false;
-      const today = new Date();
-      const selectedDate = new Date(date);
-      
-      today.setHours(0, 0, 0, 0);
-      selectedDate.setHours(0, 0, 0, 0);
-      
-      return selectedDate.getTime() === today.getTime();
-    };
-
-    let tasksToSubmit = generatedTasks;
-    
-    // If today's date is selected, only submit today's task
-    if (isToday()) {
-      const todayDateStr = formatDateToDDMMYYYY(date);
-      tasksToSubmit = generatedTasks.filter(task => {
-        const taskDateStr = task.dueDate.split(' ')[0]; // Get date part (DD/MM/YYYY)
-        return taskDateStr === todayDateStr;
-      });
-      
-      if (tasksToSubmit.length === 0) {
-        tasksToSubmit = [generatedTasks[0]]; // Fallback to first task
+      if (!formData.department || formData.department.trim() === "") {
+        alert("Please select a department before submitting tasks");
+        setIsSubmitting(false);
+        return;
       }
-    }
 
-    // Get task IDs for main sheet
-    const lastTaskIdMain = await getLastTaskId(submitSheetName);
-    let nextTaskIdMain = lastTaskIdMain + 1;
-
-    // Prepare tasks data
-    const tasksDataMain = tasksToSubmit.map((task, index) => ({
-      timestamp: getCurrentTimestamp(),
-      taskId: (nextTaskIdMain + index).toString(),
-      firm: task.department,
-      givenBy: task.givenBy,
-      name: task.doer,
-      description: task.description,
-      startDate: task.dueDate,
-      freq: task.frequency,
-      enableReminders: task.enableReminders ? "Yes" : "No",
-      requireAttachment: task.requireAttachment ? "Yes" : "No"
-    }));
-
-    // Submit to main sheet (Delegation / Checklist)
-    const formPayloadMain = new FormData();
-    formPayloadMain.append("sheetName", submitSheetName);
-    formPayloadMain.append("action", "insert");
-    formPayloadMain.append("batchInsert", "true");
-    formPayloadMain.append("rowData", JSON.stringify(tasksDataMain));
-
-    await fetch(
-      "https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec",
-      {
-        method: "POST",
-        body: formPayloadMain,
-        mode: "no-cors",
+      // Determine the main sheet based on frequency
+      if (!formData.taskType) {
+        alert("Please select a task type first");
+        return;
       }
-    );
 
-    // ✅ Submit to UNIQUE sheet only if frequency is NOT one-time
-    if (formData.frequency !== "one-time") {
-      const lastTaskIdUnique = await getLastTaskId("UNIQUE");
-      let nextTaskIdUnique = lastTaskIdUnique + 1;
+      // Determine the main sheet based on task type
+      let submitSheetName;
+      if (formData.taskType === "delegation") {
+        submitSheetName = "DELEGATION";
+      } else {
+        submitSheetName = "Checklist";
+      }
+      // Check if selected date is today
+      const isToday = () => {
+        if (!date) return false;
+        const today = new Date();
+        const selectedDate = new Date(date);
 
-      const tasksDataUnique = tasksToSubmit.map((task, index) => ({
+        today.setHours(0, 0, 0, 0);
+        selectedDate.setHours(0, 0, 0, 0);
+
+        return selectedDate.getTime() === today.getTime();
+      };
+
+      let tasksToSubmit = generatedTasks;
+
+      // If today's date is selected, only submit today's task
+      if (isToday()) {
+        const todayDateStr = formatDateToDDMMYYYY(date);
+        tasksToSubmit = generatedTasks.filter(task => {
+          const taskDateStr = task.dueDate.split(' ')[0]; // Get date part (DD/MM/YYYY)
+          return taskDateStr === todayDateStr;
+        });
+
+        if (tasksToSubmit.length === 0) {
+          tasksToSubmit = [generatedTasks[0]]; // Fallback to first task
+        }
+      }
+
+      // Get task IDs for main sheet
+      const lastTaskIdMain = await getLastTaskId(submitSheetName);
+      let nextTaskIdMain = lastTaskIdMain + 1;
+
+      // Prepare tasks data
+      const tasksDataMain = tasksToSubmit.map((task, index) => ({
         timestamp: getCurrentTimestamp(),
-        taskId: (nextTaskIdUnique + index).toString(),
+        taskId: (nextTaskIdMain + index).toString(),
         firm: task.department,
         givenBy: task.givenBy,
         name: task.doer,
@@ -1018,59 +1057,93 @@ const handleSubmit = async (e) => {
         requireAttachment: task.requireAttachment ? "Yes" : "No"
       }));
 
-      const formPayloadUnique = new FormData();
-      formPayloadUnique.append("sheetName", "UNIQUE");
-      formPayloadUnique.append("action", "insert");
-      formPayloadUnique.append("batchInsert", "true");
-      formPayloadUnique.append("rowData", JSON.stringify(tasksDataUnique));
+      // Submit to main sheet (Delegation / Checklist)
+      const formPayloadMain = new FormData();
+      formPayloadMain.append("sheetName", submitSheetName);
+      formPayloadMain.append("action", "insert");
+      formPayloadMain.append("batchInsert", "true");
+      formPayloadMain.append("rowData", JSON.stringify(tasksDataMain));
 
       await fetch(
         "https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec",
         {
           method: "POST",
-          body: formPayloadUnique,
+          body: formPayloadMain,
           mode: "no-cors",
         }
       );
-    }
 
-    // Success message
-    const taskCount = tasksToSubmit.length;
-    let successMessage = `Successfully submitted ${taskCount} task(s) to ${submitSheetName}`;
-    
-    if (formData.frequency !== "one-time") {
-      successMessage += ` and UNIQUE sheets!`;
-    }
-    if (isToday()) {
-      successMessage = `Today's date selected - submitted ${taskCount} task(s) to ${submitSheetName}` + (formData.frequency !== "one-time" ? " and UNIQUE sheets!" : "!");
-    }
-    
-    alert(successMessage);
+      // ✅ Submit to UNIQUE sheet only if frequency is NOT one-time
+      if (formData.frequency !== "one-time") {
+        const lastTaskIdUnique = await getLastTaskId("UNIQUE");
+        let nextTaskIdUnique = lastTaskIdUnique + 1;
 
-    // Reset form
-    const userRole = sessionStorage.getItem('role');
-    const username = sessionStorage.getItem('username');
+        const tasksDataUnique = tasksToSubmit.map((task, index) => ({
+          timestamp: getCurrentTimestamp(),
+          taskId: (nextTaskIdUnique + index).toString(),
+          firm: task.department,
+          givenBy: task.givenBy,
+          name: task.doer,
+          description: task.description,
+          startDate: task.dueDate,
+          freq: task.frequency,
+          enableReminders: task.enableReminders ? "Yes" : "No",
+          requireAttachment: task.requireAttachment ? "Yes" : "No"
+        }));
 
-    setFormData({
-      department: "",
-      givenBy: "",
-      doer: (userRole !== 'admin' && username) ? formData.doer : "",
-      description: "",
-      frequency: "daily",
-      enableReminders: true,
-      requireAttachment: false
-    });
-    setSelectedDate(null);
-    setTime("09:00");
-    setGeneratedTasks([]);
-    setAccordionOpen(false);
-  } catch (error) {
-    console.error("Submission error:", error);
-    alert("Failed to assign tasks. Please try again.");
-  } finally {
-    setIsSubmitting(false);
-  }
-};
+        const formPayloadUnique = new FormData();
+        formPayloadUnique.append("sheetName", "UNIQUE");
+        formPayloadUnique.append("action", "insert");
+        formPayloadUnique.append("batchInsert", "true");
+        formPayloadUnique.append("rowData", JSON.stringify(tasksDataUnique));
+
+        await fetch(
+          "https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec",
+          {
+            method: "POST",
+            body: formPayloadUnique,
+            mode: "no-cors",
+          }
+        );
+      }
+
+      // Success message
+      const taskCount = tasksToSubmit.length;
+      let successMessage = `Successfully submitted ${taskCount} task(s) to ${submitSheetName}`;
+
+      if (formData.frequency !== "one-time") {
+        successMessage += ` and UNIQUE sheets!`;
+      }
+      if (isToday()) {
+        successMessage = `Today's date selected - submitted ${taskCount} task(s) to ${submitSheetName}` + (formData.frequency !== "one-time" ? " and UNIQUE sheets!" : "!");
+      }
+
+      alert(successMessage);
+
+      // Reset form
+      const userRole = sessionStorage.getItem('role');
+      const username = sessionStorage.getItem('username');
+
+      setFormData({
+        department: "",
+        givenBy: "",
+        doer: (userRole !== 'admin' && username) ? formData.doer : "",
+        description: "",
+        frequency: "daily",
+        enableReminders: true,
+        requireAttachment: false
+      });
+      setSelectedDate(null);
+      setTime("09:00");
+      setGeneratedTasks([]);
+      setAccordionOpen(false);
+    } catch (error) {
+      console.error("Submission error:", error);
+      alert("Failed to assign tasks. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
 
   // Helper function to format date for display in preview
@@ -1092,395 +1165,472 @@ const handleSubmit = async (e) => {
 
   return (
     <AdminLayout>
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-4xl mx-auto">
         <h1 className="text-2xl font-bold tracking-tight mb-6 text-purple-500">
           Assign New Task
         </h1>
-        <div className="rounded-lg border border-purple-200 bg-white shadow-md overflow-hidden">
-          <form onSubmit={handleSubmit}>
-            <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-6 border-b border-purple-100">
-              <h2 className="text-xl font-semibold text-purple-700">
-                Task Details
-              </h2>
-              <p className="text-purple-600">
-                Fill in the details to assign a new task to a staff member.
-              </p>
+
+        {!selectedTaskType ? (
+          <div className="grid md:grid-cols-2 gap-6 mb-8">
+            {/* Checklist Task Option */}
+            <div
+              onClick={() => handleTaskTypeSelect("checklist")}
+              className="cursor-pointer p-6 border-2 border-purple-200 rounded-lg bg-white shadow-md hover:shadow-lg transition-all hover:border-purple-400"
+            >
+              <div className="text-center">
+                <div className="bg-purple-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <FileCheck className="h-8 w-8 text-purple-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-purple-700 mb-2">
+                  Checklist Task
+                </h3>
+                <p className="text-sm text-purple-600">
+                  All frequencies of Daily,Weekly,Monthly,Yearly etc. Tasks will be stored in the Checklist sheet.
+                </p>
+                <button className="mt-4 bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 transition-colors">
+                  Select Checklist
+                </button>
+              </div>
             </div>
-            <div className="p-6 space-y-4">
-              {/* Department Name Dropdown */}
-              <div className="space-y-2">
-                <label
-                  htmlFor="department"
-                  className="block text-sm font-medium text-purple-700"
-                >
-                  Department Name *
-                </label>
-                <select
-                  id="department"
-                  name="department"
-                  value={formData.department}
-                  onChange={handleChange}
-                  required
-                  className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                >
-                  <option value="">Select Department</option>
-                  {departmentOptions.map((dept, index) => (
-                    <option key={index} value={dept}>
-                      {dept}
-                    </option>
-                  ))}
-                </select>
-                {formData.department && (
-                  <p className="text-xs text-purple-600">
-                    Tasks will be stored in Checklist sheet
+
+            {/* Delegation Task Option */}
+            <div
+              onClick={() => handleTaskTypeSelect("delegation")}
+              className="cursor-pointer p-6 border-2 border-purple-200 rounded-lg bg-white shadow-md hover:shadow-lg transition-all hover:border-purple-400"
+            >
+              <div className="text-center">
+                <div className="bg-purple-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <BellRing className="h-8 w-8 text-purple-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-purple-700 mb-2">
+                  Delegation Task
+                </h3>
+                <p className="text-sm text-purple-600">
+                  Only 'One-Time' frequency. Tasks will be stored in the Delegation sheet.
+                </p>
+                <button className="mt-4 bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 transition-colors">
+                  Select Delegation
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="max-w-2xl mx-auto">
+            <div className="mb-4 p-3 bg-purple-100 rounded-lg flex justify-between items-center">
+              <div>
+                <span className="font-medium text-purple-700">
+                  {selectedTaskType === "checklist" ? "Checklist Task" : "Delegation Task"}
+                </span>
+                <span className="text-sm text-purple-600 ml-2">
+                  {selectedTaskType === "checklist"
+                    ? "(All frequencies except One-Time)"
+                    : "(One-Time frequency only)"}
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  setSelectedTaskType(null);
+                  setFormData(prev => ({ ...prev, taskType: "" }));
+                }}
+                className="text-purple-600 hover:text-purple-800 text-sm"
+              >
+                Change Task Type
+              </button>
+            </div>
+
+            <div className="rounded-lg border border-purple-200 bg-white shadow-md overflow-hidden">
+              <form onSubmit={handleSubmit}>
+                <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-6 border-b border-purple-100">
+                  <h2 className="text-xl font-semibold text-purple-700">
+                    Task Details
+                  </h2>
+                  <p className="text-purple-600">
+                    Fill in the details to assign a new task to a staff member.
                   </p>
-                )}
-              </div>
+                </div>
+                <div className="p-6 space-y-4">
+                  {/* Department Name Dropdown */}
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="department"
+                      className="block text-sm font-medium text-purple-700"
+                    >
+                      Department Name *
+                    </label>
+                    <select
+                      id="department"
+                      name="department"
+                      value={formData.department}
+                      onChange={handleChange}
+                      required
+                      className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                    >
+                      <option value="">Select Department</option>
+                      {departmentOptions.map((dept, index) => (
+                        <option key={index} value={dept}>
+                          {dept}
+                        </option>
+                      ))}
+                    </select>
+                    {formData.department && (
+                      <p className="text-xs text-purple-600">
+                        Tasks will be stored in Checklist sheet
+                      </p>
+                    )}
+                  </div>
 
-              {/* Given By Dropdown */}
-              <div className="space-y-2">
-                <label
-                  htmlFor="givenBy"
-                  className="block text-sm font-medium text-purple-700"
-                >
-                  Given By
-                </label>
-                <select
-                  id="givenBy"
-                  name="givenBy"
-                  value={formData.givenBy}
-                  onChange={handleChange}
-                  required
-                  className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                >
-                  <option value="">Select Given By</option>
-                  {givenByOptions.map((person, index) => (
-                    <option key={index} value={person}>
-                      {person}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  {/* Given By Dropdown */}
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="givenBy"
+                      className="block text-sm font-medium text-purple-700"
+                    >
+                      Given By
+                    </label>
+                    <select
+                      id="givenBy"
+                      name="givenBy"
+                      value={formData.givenBy}
+                      onChange={handleChange}
+                      required
+                      className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                    >
+                      <option value="">Select Given By</option>
+                      {givenByOptions.map((person, index) => (
+                        <option key={index} value={person}>
+                          {person}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-              {/* Doer's Name Dropdown */}
-              <div className="space-y-2">
-                <label
-                  htmlFor="doer"
-                  className="block text-sm font-medium text-purple-700"
-                >
-                  Doer's Name
-                </label>
-                <select
-                  id="doer"
-                  name="doer"
-                  value={formData.doer}
-                  onChange={handleChange}
-                  required
-                  className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                >
-                  <option value="">Select Doer</option>
-                  {doerOptions.map((doer, index) => (
-                    <option key={index} value={doer}>
-                      {doer}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  {/* Doer's Name Dropdown */}
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="doer"
+                      className="block text-sm font-medium text-purple-700"
+                    >
+                      Doer's Name
+                    </label>
+                    <select
+                      id="doer"
+                      name="doer"
+                      value={formData.doer}
+                      onChange={handleChange}
+                      required
+                      className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                    >
+                      <option value="">Select Doer</option>
+                      {doerOptions.map((doer, index) => (
+                        <option key={index} value={doer}>
+                          {doer}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-              {/* Description */}
-              <div className="space-y-2">
-                <label
-                  htmlFor="description"
-                  className="block text-sm font-medium text-purple-700"
-                >
-                  Task Description
-                </label>
-                <textarea
-                  id="description"
-                  name="description"
-                  value={formData.description}
-                  onChange={handleChange}
-                  placeholder="Enter task description"
-                  rows={4}
-                  required
-                  className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                />
-              </div>
+                  {/* Description */}
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="description"
+                      className="block text-sm font-medium text-purple-700"
+                    >
+                      Task Description
+                    </label>
+                    <textarea
+                      id="description"
+                      name="description"
+                      value={formData.description}
+                      onChange={handleChange}
+                      placeholder="Enter task description"
+                      rows={4}
+                      required
+                      className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                    />
+                  </div>
 
-              {/* Date, Time and Frequency */}
-              <div className="grid gap-4 md:grid-cols-3">
-                {/* Date Picker */}
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-purple-700">
-                    Task Deadline Date
-                  </label>
-                  <div className="relative">
+                  {/* Date, Time and Frequency */}
+                  <div className="grid gap-4 md:grid-cols-3">
+                    {/* Date Picker */}
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-purple-700">
+                        Task Deadline Date
+                      </label>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setShowCalendar(!showCalendar)}
+                          className="w-full flex justify-start items-center rounded-md border border-purple-200 p-2 text-left focus:outline-none focus:ring-1 focus:ring-purple-500"
+                        >
+                          <Calendar className="mr-2 h-4 w-4 text-purple-500" />
+                          {date ? getFormattedDate(date) : "Select a date"}
+                        </button>
+                        {showCalendar && (
+                          <div className="absolute z-10 mt-1">
+                            <CalendarComponent
+                              date={date}
+                              onChange={setSelectedDate}
+                              onClose={() => setShowCalendar(false)}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* NEW: Time Picker */}
+                    <div className="space-y-2">
+                      <label
+                        htmlFor="time"
+                        className="block text-sm font-medium text-purple-700"
+                      >
+                        Time
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="time"
+                          id="time"
+                          value={time}
+                          onChange={(e) => setTime(e.target.value)}
+                          required
+                          className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 pl-8"
+                        />
+                        <Clock className="absolute left-2 top-2.5 h-4 w-4 text-purple-500" />
+                      </div>
+                    </div>
+
+                    {/* Frequency */}
+                    <div className="space-y-2">
+                      <label
+                        htmlFor="frequency"
+                        className="block text-sm font-medium text-purple-700"
+                      >
+                        Frequency
+                      </label>
+                      <select
+                        id="frequency"
+                        name="frequency"
+                        value={formData.frequency}
+                        onChange={handleChange}
+                        className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                        disabled={selectedTaskType === "delegation"} // Disable for delegation
+                      >
+                        {getFrequencies().map((freq) => (
+                          <option key={freq.value} value={freq.value}>
+                            {freq.label}
+                          </option>
+                        ))}
+                      </select>
+                      {selectedTaskType === "delegation" && (
+                        <p className="text-xs text-purple-600">
+                          Delegation tasks can only have One-Time frequency
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* NEW: DateTime Display */}
+                  {date && time && (
+                    <div className="p-3 bg-purple-50 border border-purple-200 rounded-md">
+                      <p className="text-sm text-purple-700">
+                        <strong>Selected Date & Time:</strong> {getFormattedDateTime()}
+                      </p>
+                      <p className="text-xs text-purple-600 mt-1">
+                        Will be stored as: {formatDateTimeForStorage(date, time)}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Additional Options */}
+                  <div className="space-y-4 pt-2 border-t border-purple-100">
+                    <h3 className="text-lg font-medium text-purple-700 pt-2">
+                      Additional Options
+                    </h3>
+
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <label
+                          htmlFor="enable-reminders"
+                          className="text-purple-700 font-medium"
+                        >
+                          Enable Reminders
+                        </label>
+                        <p className="text-sm text-purple-600">
+                          Send reminders before task due date
+                        </p>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <BellRing className="h-4 w-4 text-purple-500" />
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            id="enable-reminders"
+                            checked={formData.enableReminders}
+                            onChange={(e) =>
+                              handleSwitchChange("enableReminders", e)
+                            }
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <label
+                          htmlFor="require-attachment"
+                          className="text-purple-700 font-medium"
+                        >
+                          Require Attachment
+                        </label>
+                        <p className="text-sm text-purple-600">
+                          User must upload a file when completing task
+                        </p>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <FileCheck className="h-4 w-4 text-purple-500" />
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            id="require-attachment"
+                            checked={formData.requireAttachment}
+                            onChange={(e) =>
+                              handleSwitchChange("requireAttachment", e)
+                            }
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Preview and Submit Buttons */}
+                  <div className="space-y-4">
                     <button
                       type="button"
-                      onClick={() => setShowCalendar(!showCalendar)}
-                      className="w-full flex justify-start items-center rounded-md border border-purple-200 p-2 text-left focus:outline-none focus:ring-1 focus:ring-purple-500"
+                      onClick={generateTasks}
+                      className="w-full rounded-md border border-purple-200 bg-purple-50 py-2 px-4 text-purple-700 hover:bg-purple-100 hover:border-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
                     >
-                      <Calendar className="mr-2 h-4 w-4 text-purple-500" />
-                      {date ? getFormattedDate(date) : "Select a date"}
+                      Preview Generated Tasks
                     </button>
-                    {showCalendar && (
-                      <div className="absolute z-10 mt-1">
-                        <CalendarComponent
-                          date={date}
-                          onChange={setSelectedDate}
-                          onClose={() => setShowCalendar(false)}
-                        />
+
+                    {generatedTasks.length > 0 && (
+                      <div className="w-full">
+                        <div className="border border-purple-200 rounded-md">
+                          <button
+                            type="button"
+                            onClick={() => setAccordionOpen(!accordionOpen)}
+                            className="w-full flex justify-between items-center p-4 text-purple-700 hover:bg-purple-50 focus:outline-none"
+                          >
+                            <span className="font-medium">
+                              {generatedTasks.length} Tasks Generated
+                              {formData.frequency === "one-time"
+                                ? " (Will be stored in DELEGATION sheet)"
+                                : ` (Will be stored in Checklist sheet)`
+                              }
+                            </span>
+                            <svg
+                              className={`w-5 h-5 transition-transform ${accordionOpen ? "rotate-180" : ""
+                                }`}
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 9l-7 7-7-7"
+                              />
+                            </svg>
+                          </button>
+
+                          {accordionOpen && (
+                            <div className="p-4 border-t border-purple-200">
+                              <div className="max-h-60 overflow-y-auto space-y-2">
+                                {generatedTasks.slice(0, 20).map((task, index) => (
+                                  <div
+                                    key={index}
+                                    className="text-sm p-2 border rounded-md border-purple-200 bg-purple-50"
+                                  >
+                                    <div className="font-medium text-purple-700">
+                                      {task.description}
+                                    </div>
+                                    <div className="text-xs text-purple-600">
+                                      Due: {formatDateForDisplay(task.dueDate)} | Department: {task.department}
+                                    </div>
+                                    <div className="flex space-x-2 mt-1">
+                                      {task.enableReminders && (
+                                        <span className="inline-flex items-center text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
+                                          <BellRing className="h-3 w-3 mr-1" />{" "}
+                                          Reminders
+                                        </span>
+                                      )}
+                                      {task.requireAttachment && (
+                                        <span className="inline-flex items-center text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+                                          <FileCheck className="h-3 w-3 mr-1" />{" "}
+                                          Attachment Required
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                                {generatedTasks.length > 20 && (
+                                  <div className="text-sm text-center text-purple-600 py-2">
+                                    ...and {generatedTasks.length - 20} more tasks
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
                 </div>
 
-                {/* NEW: Time Picker */}
-                <div className="space-y-2">
-                  <label
-                    htmlFor="time"
-                    className="block text-sm font-medium text-purple-700"
+                <div className="flex justify-between bg-gradient-to-r from-purple-50 to-pink-50 p-6 border-t border-purple-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Get user role for proper reset behavior
+                      const userRole = sessionStorage.getItem('role');
+                      const username = sessionStorage.getItem('username');
+
+                      // Reset form but preserve doer for non-admin users
+                      const resetFormData = {
+                        department: "",
+                        givenBy: "",
+                        doer: (userRole !== 'admin' && username) ? formData.doer : "",
+                        description: "",
+                        frequency: "daily",
+                        enableReminders: true,
+                        requireAttachment: false,
+                      };
+
+                      setFormData(resetFormData);
+                      setSelectedDate(null);
+                      setTime("09:00");
+                      setGeneratedTasks([]);
+                      setAccordionOpen(false);
+                    }}
+                    className="rounded-md border border-purple-200 py-2 px-4 text-purple-700 hover:border-purple-300 hover:bg-purple-100 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
                   >
-                    Time
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="time"
-                      id="time"
-                      value={time}
-                      onChange={(e) => setTime(e.target.value)}
-                      required
-                      className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 pl-8"
-                    />
-                    <Clock className="absolute left-2 top-2.5 h-4 w-4 text-purple-500" />
-                  </div>
-                </div>
-
-                {/* Frequency */}
-                <div className="space-y-2">
-                  <label
-                    htmlFor="frequency"
-                    className="block text-sm font-medium text-purple-700"
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="rounded-md bg-gradient-to-r from-purple-600 to-pink-600 py-2 px-4 text-white hover:from-purple-700 hover:to-pink-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Frequency
-                  </label>
-                  <select
-                    id="frequency"
-                    name="frequency"
-                    value={formData.frequency}
-                    onChange={handleChange}
-                    className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                  >
-                    {frequencies.map((freq) => (
-                      <option key={freq.value} value={freq.value}>
-                        {freq.label}
-                      </option>
-                    ))}
-                  </select>
+                    {isSubmitting ? "Assigning..." : "Assign Task"}
+                  </button>
                 </div>
-              </div>
-
-              {/* NEW: DateTime Display */}
-              {date && time && (
-                <div className="p-3 bg-purple-50 border border-purple-200 rounded-md">
-                  <p className="text-sm text-purple-700">
-                    <strong>Selected Date & Time:</strong> {getFormattedDateTime()}
-                  </p>
-                  <p className="text-xs text-purple-600 mt-1">
-                    Will be stored as: {formatDateTimeForStorage(date, time)}
-                  </p>
-                </div>
-              )}
-
-              {/* Additional Options */}
-              <div className="space-y-4 pt-2 border-t border-purple-100">
-                <h3 className="text-lg font-medium text-purple-700 pt-2">
-                  Additional Options
-                </h3>
-
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <label
-                      htmlFor="enable-reminders"
-                      className="text-purple-700 font-medium"
-                    >
-                      Enable Reminders
-                    </label>
-                    <p className="text-sm text-purple-600">
-                      Send reminders before task due date
-                    </p>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <BellRing className="h-4 w-4 text-purple-500" />
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        id="enable-reminders"
-                        checked={formData.enableReminders}
-                        onChange={(e) =>
-                          handleSwitchChange("enableReminders", e)
-                        }
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
-                    </label>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <label
-                      htmlFor="require-attachment"
-                      className="text-purple-700 font-medium"
-                    >
-                      Require Attachment
-                    </label>
-                    <p className="text-sm text-purple-600">
-                      User must upload a file when completing task
-                    </p>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <FileCheck className="h-4 w-4 text-purple-500" />
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        id="require-attachment"
-                        checked={formData.requireAttachment}
-                        onChange={(e) =>
-                          handleSwitchChange("requireAttachment", e)
-                        }
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
-                    </label>
-                  </div>
-                </div>
-              </div>
-
-              {/* Preview and Submit Buttons */}
-              <div className="space-y-4">
-                <button
-                  type="button"
-                  onClick={generateTasks}
-                  className="w-full rounded-md border border-purple-200 bg-purple-50 py-2 px-4 text-purple-700 hover:bg-purple-100 hover:border-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
-                >
-                  Preview Generated Tasks
-                </button>
-
-                {generatedTasks.length > 0 && (
-                  <div className="w-full">
-                    <div className="border border-purple-200 rounded-md">
-                      <button
-                        type="button"
-                        onClick={() => setAccordionOpen(!accordionOpen)}
-                        className="w-full flex justify-between items-center p-4 text-purple-700 hover:bg-purple-50 focus:outline-none"
-                      >
-                        <span className="font-medium">
-                          {generatedTasks.length} Tasks Generated
-                          {formData.frequency === "one-time"
-                            ? " (Will be stored in DELEGATION sheet)"
-                            : ` (Will be stored in Checklist sheet)`
-                          }
-                        </span>
-                        <svg
-                          className={`w-5 h-5 transition-transform ${accordionOpen ? "rotate-180" : ""
-                            }`}
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M19 9l-7 7-7-7"
-                          />
-                        </svg>
-                      </button>
-
-                      {accordionOpen && (
-                        <div className="p-4 border-t border-purple-200">
-                          <div className="max-h-60 overflow-y-auto space-y-2">
-                            {generatedTasks.slice(0, 20).map((task, index) => (
-                              <div
-                                key={index}
-                                className="text-sm p-2 border rounded-md border-purple-200 bg-purple-50"
-                              >
-                                <div className="font-medium text-purple-700">
-                                  {task.description}
-                                </div>
-                                <div className="text-xs text-purple-600">
-                                  Due: {formatDateForDisplay(task.dueDate)} | Department: {task.department}
-                                </div>
-                                <div className="flex space-x-2 mt-1">
-                                  {task.enableReminders && (
-                                    <span className="inline-flex items-center text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
-                                      <BellRing className="h-3 w-3 mr-1" />{" "}
-                                      Reminders
-                                    </span>
-                                  )}
-                                  {task.requireAttachment && (
-                                    <span className="inline-flex items-center text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
-                                      <FileCheck className="h-3 w-3 mr-1" />{" "}
-                                      Attachment Required
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                            {generatedTasks.length > 20 && (
-                              <div className="text-sm text-center text-purple-600 py-2">
-                                ...and {generatedTasks.length - 20} more tasks
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
+              </form>
             </div>
-
-            <div className="flex justify-between bg-gradient-to-r from-purple-50 to-pink-50 p-6 border-t border-purple-100">
-              <button
-                type="button"
-                onClick={() => {
-                  // Get user role for proper reset behavior
-                  const userRole = sessionStorage.getItem('role');
-                  const username = sessionStorage.getItem('username');
-
-                  // Reset form but preserve doer for non-admin users
-                  const resetFormData = {
-                    department: "",
-                    givenBy: "",
-                    doer: (userRole !== 'admin' && username) ? formData.doer : "",
-                    description: "",
-                    frequency: "daily",
-                    enableReminders: true,
-                    requireAttachment: false,
-                  };
-
-                  setFormData(resetFormData);
-                  setSelectedDate(null);
-                  setTime("09:00");
-                  setGeneratedTasks([]);
-                  setAccordionOpen(false);
-                }}
-                className="rounded-md border border-purple-200 py-2 px-4 text-purple-700 hover:border-purple-300 hover:bg-purple-100 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="rounded-md bg-gradient-to-r from-purple-600 to-pink-600 py-2 px-4 text-white hover:from-purple-700 hover:to-pink-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isSubmitting ? "Assigning..." : "Assign Task"}
-              </button>
-            </div>
-          </form>
-        </div>
+          </div>
+        )}
       </div>
     </AdminLayout>
   );
