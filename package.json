@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -18,7 +17,7 @@
     "axios": "^1.8.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "core-js": "^3.45.1",
+    "core-js": "^3.37.0",
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "framer-motion": "^12.4.7",
@@ -28,12 +27,12 @@
     "lucide-react": "^0.477.0",
     "papaparse": "^5.5.2",
     "path-browserify": "^1.0.1",
-    "react": "^19.0.0",
+    "react": "^18.3.0",
     "react-datepicker": "^8.2.1",
-    "react-dom": "^19.0.0",
+    "react-dom": "^18.3.0",
     "react-router-dom": "^7.2.0",
     "recharts": "^2.15.1",
-    "regenerator-runtime": "^0.14.1",
+    "regenerator-runtime": "^0.14.0",
     "shadcn-ui": "^0.9.5",
     "tailwind-variants": "^0.3.1",
     "tailwindcss-animate": "^1.0.7"
