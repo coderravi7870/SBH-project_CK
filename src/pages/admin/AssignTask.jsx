@@ -158,11 +158,11 @@ const CalendarComponent = ({ date, onChange, onClose }) => {
 
 // Helper functions for date manipulation
 const formatDate = (date) => {
-  return date.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  if (!date) return "";
+  const day = date.getDate().toString().padStart(2, "0");
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
 };
 
 const addDays = (date, days) => {
@@ -261,7 +261,7 @@ export default function AssignTask() {
   // Function to fetch options from master sheet
   const fetchMasterSheetOptions = async () => {
     try {
-      const masterSheetId = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0";
+      const masterSheetId = "1kujDmFfYCd_3I-xnXt5xO8BBPR4XjJKLFftk1ucf-2s";
       const masterSheetName = "master";
 
       const url = `https://docs.google.com/spreadsheets/d/${masterSheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(
@@ -336,7 +336,10 @@ export default function AssignTask() {
   // Update date display format
   const getFormattedDate = (date) => {
     if (!date) return "Select a date";
-    return formatDate(date);
+    const day = date.getDate().toString().padStart(2, "0");
+    const month = (date.getMonth() + 1).toString().padStart(2, "0");
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
   };
 
   // NEW: Function to combine date and time into DD/MM/YYYY HH:MM:SS format
@@ -348,9 +351,7 @@ export default function AssignTask() {
     const month = (d.getMonth() + 1).toString().padStart(2, "0");
     const year = d.getFullYear();
 
-    // Time is already in HH:MM format, just add :00 for seconds
     const timeWithSeconds = time + ":00";
-
     return `${day}/${month}/${year} ${timeWithSeconds}`;
   };
 
@@ -392,7 +393,7 @@ export default function AssignTask() {
         console.log("Current user details:", { userRole, username });
 
         // Fetch all doers first
-        const masterSheetId = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0";
+        const masterSheetId = "1kujDmFfYCd_3I-xnXt5xO8BBPR4XjJKLFftk1ucf-2s";
         const masterSheetName = "master";
         const url = `https://docs.google.com/spreadsheets/d/${masterSheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(masterSheetName)}`;
 
@@ -500,7 +501,7 @@ export default function AssignTask() {
   // Add a function to get the last task ID from the specified sheet
   const getLastTaskId = async (sheetName) => {
     try {
-      const url = `https://docs.google.com/spreadsheets/d/1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(
+      const url = `https://docs.google.com/spreadsheets/d/1kujDmFfYCd_3I-xnXt5xO8BBPR4XjJKLFftk1ucf-2s/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(
         sheetName
       )}`;
 
@@ -549,7 +550,7 @@ export default function AssignTask() {
   // Function to fetch working days from the Working Day Calendar sheet
   const fetchWorkingDays = async () => {
     try {
-      const sheetId = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0";
+      const sheetId = "1kujDmFfYCd_3I-xnXt5xO8BBPR4XjJKLFftk1ucf-2s";
       const sheetName = "Working Day Calendar";
 
       const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(
@@ -966,7 +967,7 @@ export default function AssignTask() {
       }]));
 
       await fetch(
-        "https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec",
+        "https://script.google.com/macros/s/AKfycbwaNUNnB4VP3azQDj0Eyx2K4HjisUn85Sx13vJrFegrCimKR_leeZaI3H0PrJpkoCvV/exec",
         {
           method: "POST",
           body: formPayload,
@@ -1065,7 +1066,7 @@ export default function AssignTask() {
       formPayloadMain.append("rowData", JSON.stringify(tasksDataMain));
 
       await fetch(
-        "https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec",
+        "https://script.google.com/macros/s/AKfycbwaNUNnB4VP3azQDj0Eyx2K4HjisUn85Sx13vJrFegrCimKR_leeZaI3H0PrJpkoCvV/exec",
         {
           method: "POST",
           body: formPayloadMain,
@@ -1098,7 +1099,7 @@ export default function AssignTask() {
         formPayloadUnique.append("rowData", JSON.stringify(tasksDataUnique));
 
         await fetch(
-          "https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec",
+          "https://script.google.com/macros/s/AKfycbwaNUNnB4VP3azQDj0Eyx2K4HjisUn85Sx13vJrFegrCimKR_leeZaI3H0PrJpkoCvV/exec",
           {
             method: "POST",
             body: formPayloadUnique,

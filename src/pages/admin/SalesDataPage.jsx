@@ -1,13 +1,13 @@
 "use client"
 import { useState, useEffect, useCallback, useMemo } from "react"
-import { CheckCircle2, Upload, X, Search, History, ArrowLeft } from "lucide-react"
+import { CheckCircle2, Upload, X, Search, History, ArrowLeft, Filter, Edit } from "lucide-react"
 import AdminLayout from "../../components/layout/AdminLayout"
 
 // Configuration object - Move all configurations here
 const CONFIG = {
   // Google Apps Script URL
   APPS_SCRIPT_URL:
-    "https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec",
+    "https://script.google.com/macros/s/AKfycbwaNUNnB4VP3azQDj0Eyx2K4HjisUn85Sx13vJrFegrCimKR_leeZaI3H0PrJpkoCvV/exec",
   // Google Drive folder ID for file uploads
   DRIVE_FOLDER_ID: "1ZuvKxJ1nZTFbbhoOZizsSZxYNrleOLI8",
   // Sheet name to work with
@@ -16,7 +16,7 @@ const CONFIG = {
   PAGE_CONFIG: {
     title: "Checklist Tasks",
     historyTitle: "Checklist Task History",
-    description: "Showing today, tomorrow's tasks and past due tasks",
+    description: "Showing both completed and pending tasks for today, tomorrow, and past due dates",
     historyDescription: "Read-only view of completed tasks with submission history (excluding admin-processed items)",
   },
 }
@@ -39,16 +39,37 @@ function AccountDataPage() {
   const [endDate, setEndDate] = useState("")
   const [userRole, setUserRole] = useState("")
   const [username, setUsername] = useState("")
+  const [selectedStatus, setSelectedStatus] = useState("") // New filter for status
+  const [showFilters, setShowFilters] = useState(false) // Toggle for filter section
+  const [nameSearchTerm, setNameSearchTerm] = useState("") // Search term for name dropdown
+  const [editingRemarks, setEditingRemarks] = useState({});
+  const [tempRemarks, setTempRemarks] = useState({});
 
-  // NEW: Admin history selection states
+
+  // Admin history selection states
   const [selectedHistoryItems, setSelectedHistoryItems] = useState([])
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [markingAsDone, setMarkingAsDone] = useState(false)
   const [confirmationModal, setConfirmationModal] = useState({
     isOpen: false,
     itemCount: 0,
   })
 
-  // NEW: Function to determine submission status
+  // Function to determine submission status
+  // Add this useEffect to handle outside clicks
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (isDropdownOpen && !event.target.closest('.relative')) {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isDropdownOpen]);
+
   const getSubmissionStatus = (actualDate, delayColumn) => {
     const isEmpty = (value) => {
       return value === null || value === undefined || (typeof value === "string" && value.trim() === "")
@@ -66,7 +87,57 @@ function AccountDataPage() {
     }
   }
 
-  // UPDATED: Format date-time to DD/MM/YYYY HH:MM:SS
+  const handleEditRemarks = async (id, currentRemarks, historyItem) => {
+    try {
+      const formData = new FormData();
+      formData.append("sheetName", CONFIG.SHEET_NAME);
+      formData.append("action", "update");
+      formData.append("rowIndex", historyItem._rowIndex);
+
+      // Create row data array with empty values for all columns except remarks
+      const rowData = Array(15).fill(""); // Create empty array for 15 columns
+      rowData[13] = tempRemarks[id] || currentRemarks || ""; // Column N (index 13) is remarks
+
+      formData.append("rowData", JSON.stringify(rowData));
+
+      const response = await fetch(CONFIG.APPS_SCRIPT_URL, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Update local state
+        setHistoryData(prev =>
+          prev.map(item =>
+            item._id === id ? { ...item, col13: tempRemarks[id] || currentRemarks || "" } : item
+          )
+        );
+        setEditingRemarks(prev => ({ ...prev, [id]: false }));
+        setSuccessMessage("Remarks updated successfully!");
+
+        // Clear temporary remarks
+        setTempRemarks(prev => {
+          const newTemp = { ...prev };
+          delete newTemp[id];
+          return newTemp;
+        });
+      } else {
+        throw new Error(result.error || "Failed to update remarks");
+      }
+    } catch (error) {
+      console.error("Error updating remarks:", error);
+      setSuccessMessage(`Failed to update remarks: ${error.message}`);
+    }
+  };
+
+
+  // Format date-time to DD/MM/YYYY HH:MM:SS
   const formatDateTimeToDDMMYYYY = (date) => {
     const day = date.getDate().toString().padStart(2, "0")
     const month = (date.getMonth() + 1).toString().padStart(2, "0")
@@ -77,7 +148,7 @@ function AccountDataPage() {
     return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`
   }
 
-  // UPDATED: Format date only to DD/MM/YYYY (for comparison purposes)
+  // Format date only to DD/MM/YYYY (for comparison purposes)
   const formatDateToDDMMYYYY = (date) => {
     const day = date.getDate().toString().padStart(2, "0")
     const month = (date.getMonth() + 1).toString().padStart(2, "0")
@@ -96,7 +167,7 @@ function AccountDataPage() {
     setUsername(user || "")
   }, [])
 
-  // UPDATED: Parse Google Sheets date-time to handle DD/MM/YYYY HH:MM:SS format
+  // Parse Google Sheets date-time to handle DD/MM/YYYY HH:MM:SS format
   const parseGoogleSheetsDateTime = (dateTimeStr) => {
     if (!dateTimeStr) return ""
     // If already in DD/MM/YYYY HH:MM:SS format, return as is
@@ -134,7 +205,29 @@ function AccountDataPage() {
     return dateTimeStr
   }
 
-  // UPDATED: Parse date from DD/MM/YYYY or DD/MM/YYYY HH:MM:SS format for comparison
+  // Helper function for task status
+  const getTaskStatus = (actualValue, adminDoneValue) => {
+    // Column K (col10) = Actual value
+    if (!isEmpty(adminDoneValue) && adminDoneValue.toString().trim() === "Admin Done") {
+      return "Admin Done";
+    }
+    return actualValue && actualValue.toString().trim() !== "" ? "Done" : "Pending";
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case "Done":
+        return "bg-green-100 text-green-800";
+      case "Admin Done":
+        return "bg-blue-100 text-blue-800"; // Blue for Admin Done
+      case "Pending":
+        return "bg-red-100 text-red-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  // Parse date from DD/MM/YYYY or DD/MM/YYYY HH:MM:SS format for comparison
   const parseDateFromDDMMYYYY = (dateStr) => {
     if (!dateStr || typeof dateStr !== "string") return null
 
@@ -160,9 +253,11 @@ function AccountDataPage() {
     setSelectedMembers([])
     setStartDate("")
     setEndDate("")
+    setSelectedStatus("")
+    setNameSearchTerm("")
   }
 
-  // NEW: Admin functions for history management
+  // Admin functions for history management
   const handleMarkMultipleDone = async () => {
     if (selectedHistoryItems.length === 0) {
       return
@@ -176,7 +271,7 @@ function AccountDataPage() {
     })
   }
 
-  // NEW: Confirmation modal component
+  // Confirmation modal component
   const ConfirmationModal = ({ isOpen, itemCount, onConfirm, onCancel }) => {
     if (!isOpen) return null
 
@@ -226,7 +321,7 @@ function AccountDataPage() {
     )
   }
 
-  // UPDATED: Admin Done submission handler - Store "Done" text instead of timestamp
+  // Admin Done submission handler - Store "Done" text instead of timestamp
   const confirmMarkDone = async () => {
     // Close the modal
     setConfirmationModal({ isOpen: false, itemCount: 0 });
@@ -237,12 +332,12 @@ function AccountDataPage() {
       const submissionData = selectedHistoryItems.map((historyItem) => ({
         taskId: historyItem._taskId || historyItem["col1"],
         rowIndex: historyItem._rowIndex,
-        adminDoneStatus: "Done", // This will update Column P
+        adminDoneStatus: "Admin Done", // This will update Column P
       }));
 
       const formData = new FormData();
       formData.append("sheetName", CONFIG.SHEET_NAME);
-      formData.append("action", "updateAdminDone"); // Use the new action name
+      formData.append("action", "updateAdminDone");
       formData.append("rowData", JSON.stringify(submissionData));
 
       const response = await fetch(CONFIG.APPS_SCRIPT_URL, {
@@ -274,17 +369,62 @@ function AccountDataPage() {
       setMarkingAsDone(false);
     }
   };
-  // Memoized filtered data to prevent unnecessary re-renders
+
+  // Memoized filtered data with enhanced filtering for both pages
   const filteredAccountData = useMemo(() => {
-    const filtered = searchTerm
-      ? accountData.filter((account) =>
+    let filtered = accountData;
+
+    // Search filter
+    if (searchTerm) {
+      filtered = filtered.filter((account) =>
         Object.values(account).some(
           (value) => value && value.toString().toLowerCase().includes(searchTerm.toLowerCase()),
         ),
-      )
-      : accountData
-    return filtered.sort(sortDateWise)
-  }, [accountData, searchTerm])
+      );
+    }
+
+    // Status filter
+    if (selectedStatus) {
+      filtered = filtered.filter((account) => {
+        if (selectedStatus === "Admin Done") {
+          // For "Admin Done", check if column P (col15) has value "Done"
+          return !isEmpty(account["col15"]) && account["col15"].toString().trim() === "Admin Done";
+        } else {
+          const taskStatus = getTaskStatus(account["col10"]);
+          return taskStatus === selectedStatus;
+        }
+      });
+    }
+
+    // Member filter
+    if (selectedMembers.length > 0) {
+      filtered = filtered.filter((account) => selectedMembers.includes(account["col4"]));
+    }
+
+    // Date range filter
+    if (startDate || endDate) {
+      filtered = filtered.filter((account) => {
+        const itemDate = parseDateFromDDMMYYYY(account["col6"]);
+        if (!itemDate) return false;
+
+        if (startDate) {
+          const startDateObj = new Date(startDate);
+          startDateObj.setHours(0, 0, 0, 0);
+          if (itemDate < startDateObj) return false;
+        }
+
+        if (endDate) {
+          const endDateObj = new Date(endDate);
+          endDateObj.setHours(23, 59, 59, 999);
+          if (itemDate > endDateObj) return false;
+        }
+
+        return true;
+      });
+    }
+
+    return filtered.sort(sortDateWise);
+  }, [accountData, searchTerm, selectedStatus, selectedMembers, startDate, endDate]);
 
   const filteredHistoryData = useMemo(() => {
     return historyData
@@ -295,6 +435,22 @@ function AccountDataPage() {
           )
           : true
         const matchesMember = selectedMembers.length > 0 ? selectedMembers.includes(item["col4"]) : true
+
+        // Status filter for history (based on submission status)
+        let matchesStatus = true;
+        if (selectedStatus) {
+          const submissionStatus = getSubmissionStatus(item["col10"], item["col11"]);
+          if (selectedStatus === "Done") {
+            matchesStatus = submissionStatus.status === "On time" || submissionStatus.status === "Late Submitted";
+          } else if (selectedStatus === "Pending") {
+            matchesStatus = submissionStatus.status === "—";
+          } else if (selectedStatus === "On time") {
+            matchesStatus = submissionStatus.status === "On time";
+          } else if (selectedStatus === "Late Submitted") {
+            matchesStatus = submissionStatus.status === "Late Submitted";
+          }
+        }
+
         let matchesDateRange = true
         if (startDate || endDate) {
           const itemDate = parseDateFromDDMMYYYY(item["col10"])
@@ -310,7 +466,7 @@ function AccountDataPage() {
             if (itemDate > endDateObj) matchesDateRange = false
           }
         }
-        return matchesSearch && matchesMember && matchesDateRange
+        return matchesSearch && matchesMember && matchesStatus && matchesDateRange
       })
       .sort((a, b) => {
         const dateStrA = a["col10"] || ""
@@ -321,7 +477,7 @@ function AccountDataPage() {
         if (!dateB) return -1
         return dateB.getTime() - dateA.getTime()
       })
-  }, [historyData, searchTerm, selectedMembers, startDate, endDate])
+  }, [historyData, searchTerm, selectedMembers, selectedStatus, startDate, endDate])
 
   const getTaskStatistics = () => {
     const totalCompleted = historyData.length
@@ -361,7 +517,7 @@ function AccountDataPage() {
     }
   }
 
-  // UPDATED: fetchSheetData - Include all history rows regardless of Column P status
+  // fetchSheetData - Show both Done and Pending tasks in task page and ALL completed tasks in history
   const fetchSheetData = useCallback(async () => {
     try {
       setLoading(true)
@@ -427,11 +583,6 @@ function AccountDataPage() {
         const columnMValue = rowValues[12] // Status (DONE)
         const columnPValue = rowValues[15] // Admin Processed Date (Column P)
 
-        // Skip rows marked as DONE in column M for pending tasks only
-        if (columnMValue && columnMValue.toString().trim() === "DONE") {
-          return
-        }
-
         const rowDateStr = columnGValue ? String(columnGValue).trim() : ""
         const formattedRowDate = parseGoogleSheetsDateTime(rowDateStr)
         const googleSheetsRowIndex = rowIndex + 1
@@ -482,30 +633,36 @@ function AccountDataPage() {
           }
         })
 
-        console.log(`Row ${rowIndex}: Task ID = ${rowData.col1}, Google Sheets Row = ${googleSheetsRowIndex}`)
+        console.log(`Row ${rowIndex}: Task ID = ${rowData.col1}, Google Sheets Row = ${googleSheetsRowIndex}, Column K = ${columnKValue}`)
 
         const hasColumnG = !isEmpty(columnGValue)
-        const isColumnKEmpty = isEmpty(columnKValue)
+        const hasColumnK = !isEmpty(columnKValue) // Check if Column K (Actual Date) has data
 
-        // For pending tasks, exclude admin processed items (Column P not empty)
-        if (hasColumnG && isColumnKEmpty && isEmpty(columnPValue)) {
+        // FIXED HISTORY LOGIC: For history, collect ALL tasks that have Column K filled (completed tasks)
+        if (hasColumnG && hasColumnK) {
+          const isUserHistoryMatch = currentUserRole === "admin" || assignedTo.toLowerCase() === currentUsername.toLowerCase()
+          if (isUserHistoryMatch) {
+            console.log(`Adding to history: Task ID = ${rowData.col1}, Actual Date = ${columnKValue}`)
+            historyRows.push(rowData)
+          }
+        }
+
+        // For task page - show BOTH Done and Pending tasks (excluding admin processed items)
+        if (hasColumnG) {
           const rowDate = parseDateFromDDMMYYYY(formattedRowDate)
           const isToday = formattedRowDate.startsWith(todayStr)
           const isTomorrow = formattedRowDate.startsWith(tomorrowStr)
           const isPastDate = rowDate && rowDate <= today
+
           if (isToday || isTomorrow || isPastDate) {
+            console.log(`Adding to tasks: Task ID = ${rowData.col1}, Status = ${hasColumnK ? 'Done' : 'Pending'}`)
             pendingAccounts.push(rowData)
           }
         }
-        // For history, include ALL completed tasks regardless of Column P status
-        else if (hasColumnG && !isColumnKEmpty) {
-          const isUserHistoryMatch =
-            currentUserRole === "admin" || assignedTo.toLowerCase() === currentUsername.toLowerCase()
-          if (isUserHistoryMatch) {
-            historyRows.push(rowData)
-          }
-        }
       })
+
+      console.log(`Total history rows collected: ${historyRows.length}`)
+      console.log(`Total task rows collected: ${pendingAccounts.length}`)
 
       setMembersList(Array.from(membersSet).sort())
       setAccountData(pendingAccounts)
@@ -598,7 +755,7 @@ function AccountDataPage() {
     resetFilters()
   }
 
-  // UPDATED: MAIN SUBMIT FUNCTION - Now also updates Admin Done column (Column P)
+  // MAIN SUBMIT FUNCTION
   const handleSubmit = async () => {
     const selectedItemsArray = Array.from(selectedItems);
     if (selectedItemsArray.length === 0) {
@@ -635,7 +792,8 @@ function AccountDataPage() {
     try {
       const today = new Date();
       // Format as DD/MM/YYYY HH:MM:SS for column K
-      const todayFormatted = formatDateTimeToDDMMYYYY(today);
+      const todayFormatted = formatDateToDDMMYYYY(today);
+      console.log("submission date:", todayFormatted);
 
       // Prepare data for submission
       const submissionData = [];
@@ -739,6 +897,152 @@ function AccountDataPage() {
   // Convert Set to Array for display
   const selectedItemsCount = selectedItems.size
 
+  // Filter Section Component// Filter Section Component
+  const FilterSection = () => {
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    const filteredMembersList = getFilteredMembersList().filter(member =>
+      member.toLowerCase().includes(nameSearchTerm.toLowerCase())
+    );
+
+    return (
+      <div className="p-4 border-b border-purple-100 bg-gray-50">
+        <div className="flex flex-wrap items-center justify-center gap-4">
+          {/* Status Filter */}
+          <div className="flex flex-col">
+            <label className="text-sm font-medium text-purple-700 mb-1">Filter by Status:</label>
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="text-sm border border-gray-200 rounded-md p-2 min-w-[130px]"
+            >
+              {showHistory ? (
+                <>
+                  <option value="On time">On time</option>
+                  <option value="Late Submitted">Late Submitted</option>
+                </>
+              ) : (
+                <>
+                  <option value="">All Status</option>
+                  <option value="Done">Done</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Admin Done">Admin Done</option>
+                </>
+              )}
+            </select>
+
+          </div>
+
+          {/* Name/Member Filter with Search Dropdown */}
+          {getFilteredMembersList().length > 0 && (
+            <div className="flex flex-col relative">
+              <label className="text-sm font-medium text-purple-700 mb-1">Filter by Member:</label>
+              <div className="relative">
+                {/* Search input that triggers dropdown */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={14} />
+                  <input
+                    type="text"
+                    placeholder="Search members..."
+                    value={nameSearchTerm}
+                    onChange={(e) => setNameSearchTerm(e.target.value)}
+                    onClick={() => setIsDropdownOpen(true)}
+                    className="pl-8 pr-4 py-2 border border-gray-200 rounded-md text-sm w-[200px] focus:outline-none focus:ring-1 focus:ring-purple-500"
+                  />
+                </div>
+
+                {/* Dropdown - only shows when clicked and has items */}
+                {isDropdownOpen && filteredMembersList.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-40 overflow-y-auto p-2 border border-gray-200 rounded-md bg-white shadow-lg">
+                    <div className="space-y-2">
+                      {filteredMembersList.map((member, idx) => (
+                        <div key={idx} className="flex items-center">
+                          <input
+                            id={`member-${idx}`}
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                            checked={selectedMembers.includes(member)}
+                            onChange={() => handleMemberSelection(member)}
+                          />
+                          <label htmlFor={`member-${idx}`} className="ml-2 text-sm text-gray-700 whitespace-nowrap">
+                            {member}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Selected members display */}
+                {selectedMembers.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {selectedMembers.map((member) => (
+                      <span
+                        key={member}
+                        className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
+                      >
+                        {member}
+                        <button
+                          onClick={() => handleMemberSelection(member)}
+                          className="ml-1 text-purple-600 hover:text-purple-800"
+                        >
+                          <X size={12} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Date Range Filter */}
+          <div className="flex flex-col">
+            <label className="text-sm font-medium text-purple-700 mb-1">Filter by Date Range:</label>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center">
+                <label htmlFor="start-date" className="text-sm text-gray-700 mr-1">
+                  From
+                </label>
+                <input
+                  id="start-date"
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="text-sm border border-gray-200 rounded-md p-1"
+                />
+              </div>
+              <div className="flex items-center">
+                <label htmlFor="end-date" className="text-sm text-gray-700 mr-1">
+                  To
+                </label>
+                <input
+                  id="end-date"
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="text-sm border border-gray-200 rounded-md p-1"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Clear Filters Button */}
+          {(selectedMembers.length > 0 || startDate || endDate || searchTerm || selectedStatus || nameSearchTerm) && (
+            <button
+              onClick={() => {
+                resetFilters();
+                setIsDropdownOpen(false);
+              }}
+              className="px-3 py-2 bg-red-100 text-red-700 rounded-md hover:bg-red-200 text-sm self-end"
+            >
+              Clear All Filters
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -757,6 +1061,17 @@ function AccountDataPage() {
                 className="pl-10 pr-4 py-2 border border-purple-200 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
+
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="rounded-md bg-gradient-to-r from-green-500 to-teal-600 py-2 px-4 text-white hover:from-green-600 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+            >
+              <div className="flex items-center">
+                <Filter className="h-4 w-4 mr-1" />
+                <span>Filters</span>
+              </div>
+            </button>
+
             <button
               onClick={toggleHistory}
               className="rounded-md bg-gradient-to-r from-blue-500 to-indigo-600 py-2 px-4 text-white hover:from-blue-600 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
@@ -783,7 +1098,7 @@ function AccountDataPage() {
               </button>
             )}
 
-            {/* NEW: Admin Submit Button for History View */}
+            {/* Admin Submit Button for History View */}
             {showHistory && userRole === "admin" && selectedHistoryItems.length > 0 && (
               <div className="fixed top-40 right-10 z-50">
                 <button
@@ -813,7 +1128,7 @@ function AccountDataPage() {
         <div className="rounded-lg border border-purple-200 shadow-md bg-white overflow-hidden">
           <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-100 p-4">
             <h2 className="text-purple-700 font-medium">
-              {showHistory ? `Completed ${CONFIG.SHEET_NAME} Tasks` : `Pending ${CONFIG.SHEET_NAME} Tasks`}
+              {showHistory ? `Completed ${CONFIG.SHEET_NAME} Tasks` : `All ${CONFIG.SHEET_NAME} Tasks`}
             </h2>
             <p className="text-purple-600 text-sm">
               {showHistory
@@ -821,6 +1136,9 @@ function AccountDataPage() {
                 : CONFIG.PAGE_CONFIG.description}
             </p>
           </div>
+
+          {/* Filter Section */}
+          {showFilters && <FilterSection />}
 
           {loading ? (
             <div className="text-center py-10">
@@ -836,75 +1154,7 @@ function AccountDataPage() {
             </div>
           ) : showHistory ? (
             <>
-              {/* History Filters */}
-              <div className="p-4 border-b border-purple-100 bg-gray-50">
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  {getFilteredMembersList().length > 0 && (
-                    <div className="flex flex-col">
-                      <div className="mb-2 flex items-center">
-                        <span className="text-sm font-medium text-purple-700">Filter by Member:</span>
-                      </div>
-                      <div className="flex flex-wrap gap-3 max-h-32 overflow-y-auto p-2 border border-gray-200 rounded-md bg-white">
-                        {getFilteredMembersList().map((member, idx) => (
-                          <div key={idx} className="flex items-center">
-                            <input
-                              id={`member-${idx}`}
-                              type="checkbox"
-                              className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                              checked={selectedMembers.includes(member)}
-                              onChange={() => handleMemberSelection(member)}
-                            />
-                            <label htmlFor={`member-${idx}`} className="ml-2 text-sm text-gray-700">
-                              {member}
-                            </label>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <div className="flex flex-col">
-                    <div className="mb-2 flex items-center">
-                      <span className="text-sm font-medium text-purple-700">Filter by Date Range:</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center">
-                        <label htmlFor="start-date" className="text-sm text-gray-700 mr-1">
-                          From
-                        </label>
-                        <input
-                          id="start-date"
-                          type="date"
-                          value={startDate}
-                          onChange={(e) => setStartDate(e.target.value)}
-                          className="text-sm border border-gray-200 rounded-md p-1"
-                        />
-                      </div>
-                      <div className="flex items-center">
-                        <label htmlFor="end-date" className="text-sm text-gray-700 mr-1">
-                          To
-                        </label>
-                        <input
-                          id="end-date"
-                          type="date"
-                          value={endDate}
-                          onChange={(e) => setEndDate(e.target.value)}
-                          className="text-sm border border-gray-200 rounded-md p-1"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  {(selectedMembers.length > 0 || startDate || endDate || searchTerm) && (
-                    <button
-                      onClick={resetFilters}
-                      className="px-3 py-1 bg-red-100 text-red-700 rounded-md hover:bg-red-200 text-sm"
-                    >
-                      Clear All Filters
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* NEW: Confirmation Modal */}
+              {/* Confirmation Modal */}
               <ConfirmationModal
                 isOpen={confirmationModal.isOpen}
                 itemCount={confirmationModal.itemCount}
@@ -921,7 +1171,7 @@ function AccountDataPage() {
                       <span className="text-xs text-gray-500">Total Completed</span>
                       <div className="text-lg font-semibold text-blue-600">{getTaskStatistics().totalCompleted}</div>
                     </div>
-                    {(selectedMembers.length > 0 || startDate || endDate || searchTerm) && (
+                    {(selectedMembers.length > 0 || startDate || endDate || searchTerm || selectedStatus) && (
                       <div className="px-3 py-2 bg-white rounded-md shadow-sm">
                         <span className="text-xs text-gray-500">Filtered Results</span>
                         <div className="text-lg font-semibold text-blue-600">{getTaskStatistics().filteredTotal}</div>
@@ -938,13 +1188,16 @@ function AccountDataPage() {
                   </div>
                 </div>
               </div>
-
-              {/* History Table - Optimized for performance */}
+              {/* History Table */}
               <div className="h-[calc(100vh-300px)] overflow-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50 sticky top-0 z-10">
                     <tr>
-                      {/* NEW: Submission Status Column Header (First Column) */}
+                      {/* Add this column header after the Admin Done column (if admin) or at the end */}
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
+                        Edit
+                      </th>
+                      {/* Submission Status Column Header */}
                       <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-blue-50 min-w-[120px]">
                         Submission Status
                       </th>
@@ -1025,7 +1278,36 @@ function AccountDataPage() {
                         const submissionStatus = getSubmissionStatus(history["col10"], history["col11"]);
                         return (
                           <tr key={history._id} className="hover:bg-gray-50">
-                            {/* NEW: Submission Status Column (First Column) */}
+                            {/* Add this cell at the end of each row, after the Admin Done column (if admin) */}
+                            <td className="px-3 py-4 min-w-[80px]">
+                              {editingRemarks[history._id] ? (
+                                <div className="flex space-x-2">
+                                  <button
+                                    onClick={() => handleEditRemarks(history._id, history["col13"], history)}
+                                    className="text-green-600 hover:text-green-800"
+                                    title="Save"
+                                  >
+                                    <CheckCircle2 size={20} />
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingRemarks(prev => ({ ...prev, [history._id]: false }))}
+                                    className="text-red-600 hover:text-red-800"
+                                    title="Cancel"
+                                  >
+                                    <X size={20} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setEditingRemarks(prev => ({ ...prev, [history._id]: true }))}
+                                  className="text-blue-600 hover:text-blue-800"
+                                  title="Edit Remarks"
+                                >
+                                  <Edit size={20} />
+                                </button>
+                              )}
+                            </td>
+                            {/* Submission Status Column */}
                             <td className="px-3 py-4 bg-blue-50 min-w-[120px]">
                               <span
                                 className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${submissionStatus.color === 'green'
@@ -1038,11 +1320,10 @@ function AccountDataPage() {
                                 {submissionStatus.status}
                               </span>
                             </td>
-                            {/* Admin Select Checkbox - Check for "Done" text specifically */}
+                            {/* Admin Select Checkbox */}
                             {userRole === "admin" && (
                               <td className="px-3 py-4 w-12">
-                                {!isEmpty(history["col15"]) && history["col15"].toString().trim() === "Done" ? (
-                                  // Already marked as Admin Done - show checked and disabled checkbox
+                                {!isEmpty(history["col15"]) && history["col15"].toString().trim() === "Admin Done" ? (
                                   <div className="flex flex-col items-center">
                                     <input
                                       type="checkbox"
@@ -1056,7 +1337,6 @@ function AccountDataPage() {
                                     </span>
                                   </div>
                                 ) : (
-                                  // Not admin done yet - normal selectable checkbox
                                   <div className="flex flex-col items-center">
                                     <input
                                       type="checkbox"
@@ -1154,9 +1434,19 @@ function AccountDataPage() {
                               </span>
                             </td>
                             <td className="px-3 py-4 bg-purple-50 min-w-[150px]">
-                              <div className="text-sm text-gray-900 break-words" title={history["col13"]}>
-                                {history["col13"] || "—"}
-                              </div>
+                              {editingRemarks[history._id] ? (
+                                <input
+                                  type="text"
+                                  defaultValue={history["col13"] || ""}
+                                  onChange={(e) => setTempRemarks(prev => ({ ...prev, [history._id]: e.target.value }))}
+                                  className="border rounded-md px-2 py-1 w-full text-sm"
+                                  autoFocus
+                                />
+                              ) : (
+                                <span className="text-sm text-gray-900 break-words">
+                                  {history["col13"] || "—"}
+                                </span>
+                              )}
                             </td>
                             <td className="px-3 py-4 min-w-[100px]">
                               {history["col14"] ? (
@@ -1177,10 +1467,10 @@ function AccountDataPage() {
                                 <span className="text-gray-400">No attachment</span>
                               )}
                             </td>
-                            {/* Admin Done Column - Show "Done" text */}
+                            {/* Admin Done Column */}
                             {userRole === "admin" && (
                               <td className="px-3 py-4 bg-gray-50 min-w-[140px]">
-                                {!isEmpty(history["col15"]) && history["col15"].toString().trim() === "Done" ? (
+                                {!isEmpty(history["col15"]) && history["col15"].toString().trim() === "Admin Done" ? (
                                   <div className="text-sm text-gray-900 break-words">
                                     <div className="flex items-center">
                                       <div className="h-4 w-4 rounded border-gray-300 text-green-600 bg-green-100 mr-2 flex items-center justify-center">
@@ -1207,7 +1497,7 @@ function AccountDataPage() {
                     ) : (
                       <tr>
                         <td colSpan={userRole === "admin" ? 16 : 14} className="px-6 py-4 text-center text-gray-500">
-                          {searchTerm || selectedMembers.length > 0 || startDate || endDate
+                          {searchTerm || selectedMembers.length > 0 || startDate || endDate || selectedStatus
                             ? "No historical records matching your filters"
                             : "No completed records found"}
                         </td>
@@ -1218,7 +1508,7 @@ function AccountDataPage() {
               </div>
             </>
           ) : (
-            /* Regular Tasks Table - Optimized for performance */
+            /* Regular Tasks Table with Status Column */
             <div className="h-[calc(100vh-250px)] overflow-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50 sticky top-0 z-10">
@@ -1233,6 +1523,10 @@ function AccountDataPage() {
                     </th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
                       Task ID
+                    </th>
+                    {/* Status Column Header */}
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
+                      Status
                     </th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
                       Department Name
@@ -1273,18 +1567,32 @@ function AccountDataPage() {
                   {filteredAccountData.length > 0 ? (
                     filteredAccountData.map((account) => {
                       const isSelected = selectedItems.has(account._id)
+                      const taskStatus = getTaskStatus(account["col10"], account["col15"]); // Column K (Actual)
+                      const isDisabled = taskStatus === "Admin Done" || taskStatus === "Done";
+                      // Check if status is "Admin Done"
                       return (
-                        <tr key={account._id} className={`${isSelected ? "bg-purple-50" : ""} hover:bg-gray-50`}>
+                        <tr
+                          key={account._id}
+                          className={`${isSelected ? "bg-purple-50" : ""} hover:bg-gray-50 ${isDisabled ? "opacity-50 bg-gray-100 cursor-not-allowed" : ""
+                            }`}
+                        >
                           <td className="px-3 py-4 w-12">
                             <input
                               type="checkbox"
                               className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
                               checked={isSelected}
                               onChange={(e) => handleCheckboxClick(e, account._id)}
+                              disabled={isDisabled} // Disable checkbox for Admin Done tasks
                             />
                           </td>
                           <td className="px-3 py-4 min-w-[100px]">
                             <div className="text-sm text-gray-900 break-words">{account["col1"] || "—"}</div>
+                          </td>
+                          {/* Status Column */}
+                          <td className="px-3 py-4 min-w-[80px]">
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(taskStatus)}`}>
+                              {taskStatus}
+                            </span>
                           </td>
                           <td className="px-3 py-4 min-w-[120px]">
                             <div className="text-sm text-gray-900 break-words">{account["col2"] || "—"}</div>
@@ -1414,10 +1722,10 @@ function AccountDataPage() {
                     })
                   ) : (
                     <tr>
-                      <td colSpan={13} className="px-6 py-4 text-center text-gray-500">
-                        {searchTerm
-                          ? "No tasks matching your search"
-                          : "No pending tasks found for today, tomorrow, or past due dates"}
+                      <td colSpan={14} className="px-6 py-4 text-center text-gray-500">
+                        {searchTerm || selectedMembers.length > 0 || startDate || endDate || selectedStatus
+                          ? "No tasks matching your filters"
+                          : "No tasks found for today, tomorrow, or past due dates"}
                       </td>
                     </tr>
                   )}
